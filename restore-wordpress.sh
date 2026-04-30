@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -148,6 +152,9 @@ if [[ ! -f "$BACKUP_ARCHIVE" ]]; then
   exit 1
 fi
 
+log "Target WordPress path: $WP_PATH"
+log "Backup archive: $BACKUP_ARCHIVE"
+
 if [[ -z "$TARGET_URL" ]]; then
   TARGET_URL="https://$DOMAIN"
 fi
@@ -208,6 +215,7 @@ if [[ -n "$SOURCE_DOMAIN_OVERRIDE" ]]; then
 fi
 
 if [[ "$USE_MAINTENANCE" -eq 1 && -f "$WP_PATH/wp-config.php" ]]; then
+  log "Activating maintenance mode"
   wp --allow-root --path="$WP_PATH" maintenance-mode activate || true
 fi
 
@@ -226,13 +234,16 @@ for item in "$WP_PATH"/*; do
 done
 shopt -u dotglob nullglob
 
+log "Extracting WordPress files"
 tar -xzf "$payload_dir/files.tar.gz" -C "$WP_PATH"
 
+log "Updating target DB config in wp-config.php"
 wp --allow-root --path="$WP_PATH" config set DB_NAME "$DB_NAME" --type=constant
 wp --allow-root --path="$WP_PATH" config set DB_USER "$DB_USER" --type=constant
 wp --allow-root --path="$WP_PATH" config set DB_PASSWORD "$DB_PASS" --type=constant
 wp --allow-root --path="$WP_PATH" config set DB_HOST "$DB_HOST" --type=constant
 
+log "Resetting and importing database"
 wp --allow-root --path="$WP_PATH" db check --quiet
 wp --allow-root --path="$WP_PATH" db reset --yes --quiet
 wp --allow-root --path="$WP_PATH" db import "$payload_dir/db.sql" --quiet
@@ -250,6 +261,7 @@ fi
 wp --allow-root --path="$WP_PATH" option update siteurl "$TARGET_URL" --quiet
 wp --allow-root --path="$WP_PATH" option update home "$TARGET_URL" --quiet
 
+log "Applying ownership and permissions"
 chown -R "$OWNER_GROUP" "$WP_PATH"
 find "$WP_PATH" -type d -exec chmod 755 {} +
 find "$WP_PATH" -type f -exec chmod 644 {} +
@@ -260,6 +272,7 @@ fi
 wp --allow-root --path="$WP_PATH" cache flush >/dev/null 2>&1 || true
 
 if [[ "$USE_MAINTENANCE" -eq 1 ]]; then
+  log "Deactivating maintenance mode"
   wp --allow-root --path="$WP_PATH" maintenance-mode deactivate || true
 fi
 

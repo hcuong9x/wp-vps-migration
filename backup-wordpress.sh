@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -97,6 +101,8 @@ if [[ ! -d "$WP_PATH" || ! -f "$WP_PATH/wp-config.php" ]]; then
 fi
 
 mkdir -p "$BACKUP_ROOT"
+log "Backup root: $BACKUP_ROOT"
+log "WordPress path: $WP_PATH"
 
 timestamp="$(date +%Y%m%d-%H%M%S)"
 base_name="${DOMAIN}-${timestamp}"
@@ -114,6 +120,7 @@ trap cleanup EXIT
 mkdir -p "$work_dir"
 
 if [[ "$USE_MAINTENANCE" -eq 1 ]]; then
+  log "Activating maintenance mode"
   wp --allow-root --path="$WP_PATH" maintenance-mode activate || true
 fi
 
@@ -121,8 +128,10 @@ db_export="$work_dir/db.sql"
 files_archive="$work_dir/files.tar.gz"
 meta_file="$work_dir/meta.env"
 
+log "Exporting database"
 wp --allow-root --path="$WP_PATH" db export "$db_export" --add-drop-table --quiet
 
+log "Archiving WordPress files"
 tar -C "$WP_PATH" \
   --exclude='./wp-content/cache' \
   --exclude='./wp-content/ai1wm-backups' \
@@ -146,9 +155,11 @@ BACKUP_CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
 if [[ "$USE_MAINTENANCE" -eq 1 ]]; then
+  log "Deactivating maintenance mode"
   wp --allow-root --path="$WP_PATH" maintenance-mode deactivate || true
 fi
 
+log "Packing final artifact"
 tar -C "$BACKUP_ROOT" -czf "$archive_path" "$base_name"
 sha_value="$(sha256sum "$archive_path" | awk '{print $1}')"
 printf '%s  %s\n' "$sha_value" "$(basename "$archive_path")" > "$sha_path"
