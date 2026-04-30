@@ -45,9 +45,37 @@ chmod +x *.sh
   --target-maintenance
 ```
 
+## Cach khuyen nghi cho ban: SSH vao VPS B roi chay (copy truc tiep A -> B)
+1) SSH vao VPS B:
+```bash
+ssh root@<TARGET_HOST>
+```
+
+2) Tren VPS B:
+```bash
+cd /path/to/wp-vps-migration
+cp migrate.env.example migrate.env
+nano migrate.env
+```
+Dat them:
+```bash
+RUN_ON_TARGET=1
+```
+
+3) Chay migrate:
+```bash
+./migrate-vps-a-to-b.sh --source-maintenance --target-maintenance --run-on-target
+```
+
+Mode `run-on-target` se:
+- Step 1: backup tren VPS A (qua SSH).
+- Step 2: `scp` truc tiep tu A ve B (khong qua may local).
+- Step 3: verify checksum tren B.
+- Step 4: restore local tren B.
+
 Trong luc chay, script se hien thi:
 - log realtime cho backup/restore (khong doi toi luc xong moi in).
-- transfer mode (`pv progress` hoac `dd status=progress` hoac `plain stream`).
+- transfer mode (`direct scp` hoac `pv progress` hoac `dd status=progress` hoac `plain stream`).
 - kich thuoc archive va checksum verify.
 
 ## Playbook test chi tiet (vao may nao, chay lenh gi)
@@ -89,13 +117,13 @@ ssh $SSH_USER@$TARGET_HOST "hostname; command -v wp tar sha256sum"
 Neu stack la `webinoly`:
 ```bash
 ssh $SSH_USER@$SOURCE_HOST "test -f /var/www/$SOURCE_DOMAIN/htdocs/wp-config.php && echo SRC_OK"
-ssh $SSH_USER@$TARGET_HOST "test -d /var/www/$TARGET_DOMAIN/htdocs && echo TGT_OK"
+ssh $SSH_USER@$TARGET_HOST "test -d /var/www/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/htdocs && echo TGT_OK"
 ```
 
 Neu stack la `tino`:
 ```bash
 ssh $SSH_USER@$SOURCE_HOST "test -f /home/$SOURCE_DOMAIN/public_html/wp-config.php && echo SRC_OK"
-ssh $SSH_USER@$TARGET_HOST "test -d /home/$TARGET_DOMAIN/public_html && echo TGT_OK"
+ssh $SSH_USER@$TARGET_HOST "test -d /home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/public_html && echo TGT_OK"
 ```
 
 ### B3) Tren may dieu phoi: test backup rieng (chua restore)
@@ -121,29 +149,34 @@ Neu ban khong dat `migrate.env`, co the truyen full option 1 dong:
 ./migrate-vps-a-to-b.sh --source-host 1.2.3.4 --target-host 5.6.7.8 --source-domain oldsite.com --target-domain staging-newsite.com --source-stack webinoly --target-stack webinoly --source-maintenance --target-maintenance
 ```
 
+Neu dang SSH vao VPS B va muon copy truc tiep A -> B:
+```bash
+./migrate-vps-a-to-b.sh --run-on-target --source-maintenance --target-maintenance
+```
+
 ### B5) Tren VPS B: verify sau restore
 Neu `webinoly`:
 ```bash
-ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/var/www/$TARGET_DOMAIN/htdocs option get siteurl"
-ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/var/www/$TARGET_DOMAIN/htdocs option get home"
-ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/var/www/$TARGET_DOMAIN/htdocs core is-installed && echo WP_OK"
+ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/var/www/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/htdocs option get siteurl"
+ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/var/www/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/htdocs option get home"
+ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/var/www/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/htdocs core is-installed && echo WP_OK"
 ```
 
 Neu `tino`:
 ```bash
-ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/$TARGET_DOMAIN/public_html option get siteurl"
-ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/$TARGET_DOMAIN/public_html option get home"
-ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/$TARGET_DOMAIN/public_html core is-installed && echo WP_OK"
+ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/public_html option get siteurl"
+ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/public_html option get home"
+ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/public_html core is-installed && echo WP_OK"
 ```
 
 Test them tu may ban:
 ```bash
-curl -I https://$TARGET_DOMAIN
+curl -I "https://${TARGET_DOMAIN:-$SOURCE_DOMAIN}"
 ```
 
 Neu ban chua doi DNS, lenh `curl` tren co the van vao VPS A cu. Co 2 cach test dung VPS B:
 ```bash
-curl -I --resolve "$TARGET_DOMAIN:443:$TARGET_HOST" "https://$TARGET_DOMAIN"
+curl -I --resolve "${TARGET_DOMAIN:-$SOURCE_DOMAIN}:443:$TARGET_HOST" "https://${TARGET_DOMAIN:-$SOURCE_DOMAIN}"
 ```
 hoac sua tam file hosts tren may ban tro domain ve IP VPS B.
 
@@ -187,6 +220,3 @@ ssh root@A "cat /root/wp-migration-backups/oldsite.com-YYYYmmdd-HHMMSS.tgz" \
 2. Chay migrate vao domain staging tren B.
 3. Verify wp-admin, plugin, media, permalink, cron.
 4. Chuyen DNS/SSL khi da test xong.
-
-
-sudo apt-get update && sudo apt-get install -y pv

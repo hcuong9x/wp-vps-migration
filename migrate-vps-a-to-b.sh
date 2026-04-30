@@ -17,6 +17,7 @@ Required:
 
 Options:
   --config <file>                  load variables from config file (default: ./migrate.env if exists)
+  --run-on-target                  run script on VPS B and copy directly A -> B via scp
   --target-domain <domain_on_vps_b> default: same as source-domain
   --source-stack <webinoly|tino>   default: webinoly
   --target-stack <webinoly|tino>   default: webinoly
@@ -53,6 +54,7 @@ SSH_OPTS="-o StrictHostKeyChecking=accept-new"
 SOURCE_MAINTENANCE=0
 TARGET_MAINTENANCE=0
 DELETE_SOURCE_ARTIFACT=0
+RUN_ON_TARGET=0
 CONFIG_FILE=""
 
 # Optional config from --config <file> or default ./migrate.env
@@ -88,6 +90,10 @@ while [[ $# -gt 0 ]]; do
     --config)
       CONFIG_FILE="${2:-}"
       shift 2
+      ;;
+    --run-on-target)
+      RUN_ON_TARGET=1
+      shift
       ;;
     --source-host)
       SOURCE_HOST="${2:-}"
@@ -187,6 +193,11 @@ if [[ ! -f "$backup_script" || ! -f "$restore_script" ]]; then
   exit 1
 fi
 
+if [[ "$RUN_ON_TARGET" -eq 1 ]] && ! command -v scp >/dev/null 2>&1; then
+  echo "Missing required command for --run-on-target: scp" >&2
+  exit 1
+fi
+
 ssh_args=()
 # shellcheck disable=SC2206
 ssh_args=($SSH_OPTS)
@@ -223,7 +234,11 @@ fi
 target_archive="$TARGET_INCOMING_DIR/$(basename "$backup_archive")"
 
 log "Step 2/4: Transfer archive to VPS B ($TARGET_HOST)"
-run_ssh_target "mkdir -p '$TARGET_INCOMING_DIR'"
+if [[ "$RUN_ON_TARGET" -eq 1 ]]; then
+  mkdir -p "$TARGET_INCOMING_DIR"
+else
+  run_ssh_target "mkdir -p '$TARGET_INCOMING_DIR'"
+fi
 
 source_size="$(run_ssh_source "stat -c %s '$backup_archive' 2>/dev/null || stat -f %z '$backup_archive' 2>/dev/null || true" | tr -d '[:space:]')"
 if [[ "$source_size" =~ ^[0-9]+$ ]]; then
@@ -234,23 +249,32 @@ if [[ "$source_size" =~ ^[0-9]+$ ]]; then
   fi
 fi
 
-if command -v pv >/dev/null 2>&1; then
-  log "Transfer mode: pv progress"
-  if [[ "$source_size" =~ ^[0-9]+$ ]]; then
-    run_ssh_source "cat '$backup_archive'" | pv -p -t -e -r -b -s "$source_size" | run_ssh_target "cat > '$target_archive'"
-  else
-    run_ssh_source "cat '$backup_archive'" | pv -p -t -e -r -b | run_ssh_target "cat > '$target_archive'"
-  fi
-elif dd if=/dev/null of=/dev/null bs=1 count=0 status=progress >/dev/null 2>&1; then
-  log "Transfer mode: dd status=progress (pv not found)"
-  run_ssh_source "cat '$backup_archive'" | dd bs=4M status=progress | run_ssh_target "cat > '$target_archive'"
+if [[ "$RUN_ON_TARGET" -eq 1 ]]; then
+  log "Transfer mode: direct scp A -> B (running on target)"
+  scp "${ssh_args[@]}" "${SSH_USER}@${SOURCE_HOST}:${backup_archive}" "$target_archive"
 else
-  log "Transfer mode: plain stream (no pv/dd progress available)"
-  run_ssh_source "cat '$backup_archive'" | run_ssh_target "cat > '$target_archive'"
+  if command -v pv >/dev/null 2>&1; then
+    log "Transfer mode: pv progress"
+    if [[ "$source_size" =~ ^[0-9]+$ ]]; then
+      run_ssh_source "cat '$backup_archive'" | pv -p -t -e -r -b -s "$source_size" | run_ssh_target "cat > '$target_archive'"
+    else
+      run_ssh_source "cat '$backup_archive'" | pv -p -t -e -r -b | run_ssh_target "cat > '$target_archive'"
+    fi
+  elif dd if=/dev/null of=/dev/null bs=1 count=0 status=progress >/dev/null 2>&1; then
+    log "Transfer mode: dd status=progress (pv not found)"
+    run_ssh_source "cat '$backup_archive'" | dd bs=4M status=progress | run_ssh_target "cat > '$target_archive'"
+  else
+    log "Transfer mode: plain stream (no pv/dd progress available)"
+    run_ssh_source "cat '$backup_archive'" | run_ssh_target "cat > '$target_archive'"
+  fi
 fi
 
 log "Step 3/4: Verify checksum on VPS B"
-target_sha="$(run_ssh_target "sha256sum '$target_archive' | awk '{print \$1}'")"
+if [[ "$RUN_ON_TARGET" -eq 1 ]]; then
+  target_sha="$(sha256sum "$target_archive" | awk '{print $1}')"
+else
+  target_sha="$(run_ssh_target "sha256sum '$target_archive' | awk '{print \$1}'")"
+fi
 if [[ "$backup_sha" != "$target_sha" ]]; then
   echo "Checksum mismatch: source=$backup_sha target=$target_sha" >&2
   exit 1
@@ -267,7 +291,11 @@ if [[ "$TARGET_MAINTENANCE" -eq 1 ]]; then
 fi
 
 restore_log="$(mktemp "${TMPDIR:-/tmp}/wp-restore-log.XXXXXX")"
-run_ssh_target "${restore_cmd[@]}" < "$restore_script" | tee "$restore_log"
+if [[ "$RUN_ON_TARGET" -eq 1 ]]; then
+  bash "$restore_script" "${restore_cmd[@]:3}" | tee "$restore_log"
+else
+  run_ssh_target "${restore_cmd[@]}" < "$restore_script" | tee "$restore_log"
+fi
 if ! grep -q '^RESTORE_DONE=1$' "$restore_log"; then
   echo "Restore may be incomplete: RESTORE_DONE marker not found" >&2
   rm -f "$restore_log"
