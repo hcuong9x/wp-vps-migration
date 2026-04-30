@@ -13,6 +13,7 @@ Bo script nay tham khao y tuong tu `another-app/301-website/run.sh` va `another-
 - `backup-wordpress.sh`: chay tren VPS A, tao 1 file `.tgz` (files + db + metadata).
 - `restore-wordpress.sh`: chay tren VPS B, giai nen va restore DB/files.
 - `migrate-vps-a-to-b.sh`: script dieu phoi tu may trung gian co SSH root vao ca A va B.
+- `cleanup-migration-backups.sh`: xoa artifact backup migration cu theo domain.
 - `migrate.env.example`: mau file cau hinh de tranh phai export nhieu bien.
 
 ## Path mac dinh theo stack
@@ -186,6 +187,27 @@ hoac sua tam file hosts tren may ban tro domain ve IP VPS B.
 ### B6) Neu can rollback nhanh khi test fail
 - Cach nhanh nhat: restore lai tu snapshot VPS B (neu da chup truoc do).
 - Hoac dung mot backup cu cua site dich roi chay lai `restore-wordpress.sh` vao domain dich.
+
+### B7) Don backup migration cu sau khi verify OK
+Mac dinh script cleanup chi dry-run, chua xoa that:
+```bash
+./cleanup-migration-backups.sh --domain onepunchmanau.store
+```
+
+Xoa that cac artifact cu, giu lai ban moi nhat trong moi thu muc:
+```bash
+./cleanup-migration-backups.sh --domain onepunchmanau.store --yes
+```
+
+Xoa tat ca artifact migration khop domain:
+```bash
+./cleanup-migration-backups.sh --domain onepunchmanau.store --keep-latest 0 --yes
+```
+
+Chi xoa file cu hon 7 ngay:
+```bash
+./cleanup-migration-backups.sh --domain onepunchmanau.store --older-than-days 7 --yes
+```
 
 ## Chay tung buoc (thu cong)
 1) Tren VPS A:
