@@ -135,6 +135,21 @@ case "$STACK" in
     ;;
 esac
 
+find_wp_config() {
+  if [[ -f "$WP_PATH/wp-config.php" ]]; then
+    printf '%s\n' "$WP_PATH/wp-config.php"
+    return 0
+  fi
+
+  parent_path="$(dirname "$WP_PATH")/wp-config.php"
+  if [[ -f "$parent_path" ]]; then
+    printf '%s\n' "$parent_path"
+    return 0
+  fi
+
+  return 1
+}
+
 for cmd in wp tar find stat; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing required command: $cmd" >&2
@@ -154,6 +169,10 @@ fi
 
 log "Target WordPress path: $WP_PATH"
 log "Backup archive: $BACKUP_ARCHIVE"
+wp_config_path="$(find_wp_config || true)"
+if [[ -n "$wp_config_path" ]]; then
+  log "Target WordPress config: $wp_config_path"
+fi
 
 if [[ -z "$TARGET_URL" ]]; then
   TARGET_URL="https://$DOMAIN"
@@ -163,7 +182,7 @@ if [[ -z "$OWNER_GROUP" ]]; then
   OWNER_GROUP="$(stat -c "%U:%G" "$WP_PATH")"
 fi
 
-if [[ -f "$WP_PATH/wp-config.php" ]]; then
+if [[ -n "$wp_config_path" ]]; then
   if [[ -z "$DB_NAME" ]]; then
     DB_NAME="$(wp --allow-root --path="$WP_PATH" config get DB_NAME --quiet || true)"
   fi
@@ -179,7 +198,11 @@ if [[ -f "$WP_PATH/wp-config.php" ]]; then
 fi
 
 if [[ -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_HOST" ]]; then
-  echo "Target DB credentials incomplete. Provide --db-name --db-user --db-pass --db-host if auto-detect fails." >&2
+  echo "Target DB credentials incomplete." >&2
+  echo "Auto-detect reads DB_NAME/DB_USER/DB_PASSWORD/DB_HOST from:" >&2
+  echo "  - $WP_PATH/wp-config.php" >&2
+  echo "  - $(dirname "$WP_PATH")/wp-config.php" >&2
+  echo "If that file does not exist or cannot be read, provide --db-name --db-user --db-pass --db-host." >&2
   exit 1
 fi
 
@@ -214,7 +237,7 @@ if [[ -n "$SOURCE_DOMAIN_OVERRIDE" ]]; then
   source_domain="$SOURCE_DOMAIN_OVERRIDE"
 fi
 
-if [[ "$USE_MAINTENANCE" -eq 1 && -f "$WP_PATH/wp-config.php" ]]; then
+if [[ "$USE_MAINTENANCE" -eq 1 && -n "$wp_config_path" ]]; then
   log "Activating maintenance mode"
   wp --allow-root --path="$WP_PATH" maintenance-mode activate || true
 fi
@@ -236,6 +259,14 @@ shopt -u dotglob nullglob
 
 log "Extracting WordPress files"
 tar -xzf "$payload_dir/files.tar.gz" -C "$WP_PATH"
+
+wp_config_path="$(find_wp_config || true)"
+if [[ -z "$wp_config_path" ]]; then
+  echo "No wp-config.php found after extracting files." >&2
+  echo "Expected wp-config.php at $WP_PATH/wp-config.php or $(dirname "$WP_PATH")/wp-config.php" >&2
+  exit 1
+fi
+log "Using WordPress config: $wp_config_path"
 
 log "Updating target DB config in wp-config.php"
 wp --allow-root --path="$WP_PATH" config set DB_NAME "$DB_NAME" --type=constant
@@ -265,8 +296,8 @@ log "Applying ownership and permissions"
 chown -R "$OWNER_GROUP" "$WP_PATH"
 find "$WP_PATH" -type d -exec chmod 755 {} +
 find "$WP_PATH" -type f -exec chmod 644 {} +
-if [[ -f "$WP_PATH/wp-config.php" ]]; then
-  chmod 640 "$WP_PATH/wp-config.php"
+if [[ "$wp_config_path" == "$WP_PATH/wp-config.php" ]]; then
+  chmod 640 "$wp_config_path"
 fi
 
 wp --allow-root --path="$WP_PATH" cache flush >/dev/null 2>&1 || true

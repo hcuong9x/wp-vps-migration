@@ -19,6 +19,9 @@ Bo script nay tham khao y tuong tu `another-app/301-website/run.sh` va `another-
 - `webinoly`: `/var/www/<domain>/htdocs`
 - `tino`: `/home/<domain>/public_html`
 
+Voi Webinoly, `wp-config.php` co the nam ngoai docroot o `/var/www/<domain>/wp-config.php`.
+Script se tu tim config trong ca docroot va thu muc cha cua docroot.
+
 Neu site dung slug khac, truyen them `--source-slug` hoac `--target-slug`.
 
 ## Dieu kien can
@@ -213,6 +216,8 @@ ssh root@A "cat /root/wp-migration-backups/oldsite.com-YYYYmmdd-HHMMSS.tgz" \
 - Script se ghi de `DB_NAME/DB_USER/DB_PASSWORD/DB_HOST` trong `wp-config.php` cua site dich de tro toi DB dich.
 - Neu auto-detect DB dich that bai, truyen tay:
   - `--db-name ... --db-user ... --db-pass ... --db-host ...`
+  - Neu chay qua `migrate-vps-a-to-b.sh`, dung `--target-db-name ... --target-db-user ... --target-db-pass ... --target-db-host ...`
+  - Hoac dien trong `migrate.env`: `TARGET_DB_NAME`, `TARGET_DB_USER`, `TARGET_DB_PASS`, `TARGET_DB_HOST`.
 - Sau restore, script chay `search-replace` de doi domain va cap nhat `siteurl/home`.
 
 ## Goi y quy trinh an toan production

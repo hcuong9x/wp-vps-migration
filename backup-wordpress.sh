@@ -88,6 +88,21 @@ case "$STACK" in
     ;;
 esac
 
+find_wp_config() {
+  if [[ -f "$WP_PATH/wp-config.php" ]]; then
+    printf '%s\n' "$WP_PATH/wp-config.php"
+    return 0
+  fi
+
+  parent_path="$(dirname "$WP_PATH")/wp-config.php"
+  if [[ -f "$parent_path" ]]; then
+    printf '%s\n' "$parent_path"
+    return 0
+  fi
+
+  return 1
+}
+
 for cmd in wp tar sha256sum; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing required command: $cmd" >&2
@@ -95,14 +110,17 @@ for cmd in wp tar sha256sum; do
   fi
 done
 
-if [[ ! -d "$WP_PATH" || ! -f "$WP_PATH/wp-config.php" ]]; then
+wp_config_path="$(find_wp_config || true)"
+if [[ ! -d "$WP_PATH" || -z "$wp_config_path" ]]; then
   echo "WordPress path not found or invalid: $WP_PATH" >&2
+  echo "Expected wp-config.php at $WP_PATH/wp-config.php or $(dirname "$WP_PATH")/wp-config.php" >&2
   exit 1
 fi
 
 mkdir -p "$BACKUP_ROOT"
 log "Backup root: $BACKUP_ROOT"
 log "WordPress path: $WP_PATH"
+log "WordPress config: $wp_config_path"
 
 timestamp="$(date +%Y%m%d-%H%M%S)"
 base_name="${DOMAIN}-${timestamp}"
@@ -147,6 +165,7 @@ SOURCE_STACK=$STACK
 SOURCE_DOMAIN=$DOMAIN
 SOURCE_SLUG=$SLUG
 SOURCE_WP_PATH=$WP_PATH
+SOURCE_WP_CONFIG_PATH=$wp_config_path
 SOURCE_SITEURL=$source_siteurl
 SOURCE_HOME=$source_home
 SOURCE_TABLE_PREFIX=$source_prefix

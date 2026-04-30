@@ -24,6 +24,10 @@ Options:
   --source-slug <path>             default: htdocs/webinoly, public_html/tino
   --target-slug <path>             default: htdocs/webinoly, public_html/tino
   --target-url <url>               default: https://<target-domain>
+  --target-db-name <name>          target DB name if auto-detect from wp-config.php fails
+  --target-db-user <name>          target DB user
+  --target-db-pass <password>      target DB password
+  --target-db-host <host>          target DB host
   --source-backup-root <path>      default: /root/wp-migration-backups
   --target-incoming-dir <path>     default: /root/wp-migration-backups/incoming
   --ssh-user <user>                default: root
@@ -47,6 +51,10 @@ TARGET_STACK="webinoly"
 SOURCE_SLUG=""
 TARGET_SLUG=""
 TARGET_URL=""
+TARGET_DB_NAME=""
+TARGET_DB_USER=""
+TARGET_DB_PASS=""
+TARGET_DB_HOST=""
 SOURCE_BACKUP_ROOT="/root/wp-migration-backups"
 TARGET_INCOMING_DIR="/root/wp-migration-backups/incoming"
 SSH_USER="root"
@@ -129,6 +137,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --target-url)
       TARGET_URL="${2:-}"
+      shift 2
+      ;;
+    --target-db-name)
+      TARGET_DB_NAME="${2:-}"
+      shift 2
+      ;;
+    --target-db-user)
+      TARGET_DB_USER="${2:-}"
+      shift 2
+      ;;
+    --target-db-pass)
+      TARGET_DB_PASS="${2:-}"
+      shift 2
+      ;;
+    --target-db-host)
+      TARGET_DB_HOST="${2:-}"
       shift 2
       ;;
     --source-backup-root)
@@ -288,6 +312,18 @@ if [[ -n "$TARGET_SLUG" ]]; then
 fi
 if [[ "$TARGET_MAINTENANCE" -eq 1 ]]; then
   restore_cmd+=(--maintenance)
+fi
+if [[ -n "$TARGET_DB_NAME" ]]; then
+  restore_cmd+=(--db-name "$TARGET_DB_NAME")
+fi
+if [[ -n "$TARGET_DB_USER" ]]; then
+  restore_cmd+=(--db-user "$TARGET_DB_USER")
+fi
+if [[ -n "$TARGET_DB_PASS" ]]; then
+  restore_cmd+=(--db-pass "$TARGET_DB_PASS")
+fi
+if [[ -n "$TARGET_DB_HOST" ]]; then
+  restore_cmd+=(--db-host "$TARGET_DB_HOST")
 fi
 
 restore_log="$(mktemp "${TMPDIR:-/tmp}/wp-restore-log.XXXXXX")"
