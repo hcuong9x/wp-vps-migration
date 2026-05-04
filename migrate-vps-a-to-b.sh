@@ -19,10 +19,10 @@ Options:
   --config <file>                  load variables from config file (default: ./migrate.env if exists)
   --run-on-target                  run script on VPS B and copy directly A -> B via scp
   --target-domain <domain_on_vps_b> default: same as source-domain
-  --source-stack <webinoly|tino>   default: webinoly
-  --target-stack <webinoly|tino>   default: webinoly
-  --source-slug <path>             default: htdocs/webinoly, public_html/tino
-  --target-slug <path>             default: htdocs/webinoly, public_html/tino
+  --source-stack <webinoly|tino|wptangtoc-ols>   default: webinoly
+  --target-stack <webinoly|tino|wptangtoc-ols>   default: webinoly
+  --source-slug <path>             default: htdocs (webinoly), public_html (tino), html (wptangtoc-ols)
+  --target-slug <path>             default: htdocs (webinoly), public_html (tino), html (wptangtoc-ols)
   --target-url <url>               default: https://<target-domain>
   --target-db-name <name>          target DB name if auto-detect from wp-config.php fails
   --target-db-user <name>          target DB user
@@ -207,6 +207,35 @@ fi
 if [[ -z "$TARGET_URL" ]]; then
   TARGET_URL="https://$TARGET_DOMAIN"
 fi
+
+normalize_stack() {
+  local value="${1:-}"
+  value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+  value="${value// /-}"
+  value="${value//_/-}"
+  if [[ "$value" == "wptangtocols" ]]; then
+    value="wptangtoc-ols"
+  fi
+  printf '%s\n' "$value"
+}
+
+validate_stack() {
+  local value="$1"
+  local flag="$2"
+  case "$value" in
+    webinoly|tino|wptangtoc-ols)
+      ;;
+    *)
+      echo "Unsupported stack for $flag: $value (must be webinoly|tino|wptangtoc-ols)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+SOURCE_STACK="$(normalize_stack "$SOURCE_STACK")"
+TARGET_STACK="$(normalize_stack "$TARGET_STACK")"
+validate_stack "$SOURCE_STACK" "--source-stack"
+validate_stack "$TARGET_STACK" "--target-stack"
 
 script_dir="$(cd -- "$(dirname "$0")" >/dev/null 2>&1 && pwd -P)"
 backup_script="$script_dir/backup-wordpress.sh"

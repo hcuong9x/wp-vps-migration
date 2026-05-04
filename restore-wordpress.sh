@@ -8,15 +8,15 @@ log() {
 usage() {
   cat <<'EOF'
 Usage:
-  restore-wordpress.sh --stack <webinoly|tino> --domain <target-domain> --backup <archive.tgz> [options]
+  restore-wordpress.sh --stack <webinoly|tino|wptangtoc-ols> --domain <target-domain> --backup <archive.tgz> [options]
 
 Options:
-  --stack <name>            webinoly or tino (required)
+  --stack <name>            webinoly, tino, or wptangtoc-ols (required)
   --domain <domain>         target domain on VPS B (required)
   --backup <path>           backup archive path on VPS B (required)
   --source-domain <domain>  override source domain (default from backup metadata)
   --target-url <url>        default: https://<target-domain>
-  --slug <path>             docroot slug, default: htdocs (webinoly), public_html (tino)
+  --slug <path>             docroot slug, default: htdocs (webinoly), public_html (tino), html (wptangtoc-ols)
   --db-name <name>          target DB name (optional, auto-detect from current wp-config if omitted)
   --db-user <name>          target DB user
   --db-pass <password>      target DB password
@@ -116,6 +116,14 @@ if [[ -z "$STACK" || -z "$DOMAIN" || -z "$BACKUP_ARCHIVE" ]]; then
   exit 1
 fi
 
+stack_key="$(printf '%s' "$STACK" | tr '[:upper:]' '[:lower:]')"
+stack_key="${stack_key// /-}"
+stack_key="${stack_key//_/-}"
+if [[ "$stack_key" == "wptangtocols" ]]; then
+  stack_key="wptangtoc-ols"
+fi
+STACK="$stack_key"
+
 case "$STACK" in
   webinoly)
     if [[ -z "$SLUG" ]]; then
@@ -129,8 +137,14 @@ case "$STACK" in
     fi
     WP_PATH="/home/$DOMAIN/$SLUG"
     ;;
+  wptangtoc-ols)
+    if [[ -z "$SLUG" ]]; then
+      SLUG="html"
+    fi
+    WP_PATH="/home/$DOMAIN/$SLUG"
+    ;;
   *)
-    echo "Unsupported stack: $STACK (must be webinoly|tino)" >&2
+    echo "Unsupported stack: $STACK (must be webinoly|tino|wptangtoc-ols)" >&2
     exit 1
     ;;
 esac

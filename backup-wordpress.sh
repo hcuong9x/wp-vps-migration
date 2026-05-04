@@ -5,15 +5,24 @@ log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
 }
 
+human_bytes() {
+  local bytes="${1:-0}"
+  if command -v numfmt >/dev/null 2>&1; then
+    numfmt --to=iec --suffix=B "$bytes"
+  else
+    printf '%s bytes' "$bytes"
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage:
-  backup-wordpress.sh --stack <webinoly|tino> --domain <domain> [options]
+  backup-wordpress.sh --stack <webinoly|tino|wptangtoc-ols> --domain <domain> [options]
 
 Options:
-  --stack <name>           webinoly or tino (required)
+  --stack <name>           webinoly, tino, or wptangtoc-ols (required)
   --domain <domain>        source domain (required)
-  --slug <path>            docroot slug, default: htdocs (webinoly), public_html (tino)
+  --slug <path>            docroot slug, default: htdocs (webinoly), public_html (tino), html (wptangtoc-ols)
   --backup-root <path>     default: /root/wp-migration-backups
   --maintenance            enable wp maintenance mode during backup
   -h, --help               show help
@@ -69,6 +78,14 @@ if [[ -z "$STACK" || -z "$DOMAIN" ]]; then
   exit 1
 fi
 
+stack_key="$(printf '%s' "$STACK" | tr '[:upper:]' '[:lower:]')"
+stack_key="${stack_key// /-}"
+stack_key="${stack_key//_/-}"
+if [[ "$stack_key" == "wptangtocols" ]]; then
+  stack_key="wptangtoc-ols"
+fi
+STACK="$stack_key"
+
 case "$STACK" in
   webinoly)
     if [[ -z "$SLUG" ]]; then
@@ -82,8 +99,14 @@ case "$STACK" in
     fi
     WP_PATH="/home/$DOMAIN/$SLUG"
     ;;
+  wptangtoc-ols)
+    if [[ -z "$SLUG" ]]; then
+      SLUG="html"
+    fi
+    WP_PATH="/home/$DOMAIN/$SLUG"
+    ;;
   *)
-    echo "Unsupported stack: $STACK (must be webinoly|tino)" >&2
+    echo "Unsupported stack: $STACK (must be webinoly|tino|wptangtoc-ols)" >&2
     exit 1
     ;;
 esac
@@ -178,8 +201,42 @@ if [[ "$USE_MAINTENANCE" -eq 1 ]]; then
   wp --allow-root --path="$WP_PATH" maintenance-mode deactivate || true
 fi
 
-log "Packing final artifact"
-tar -C "$BACKUP_ROOT" -czf "$archive_path" "$base_name"
+work_size="$(du -sb "$work_dir" 2>/dev/null | awk '{print $1}' || true)"
+if [[ "$work_size" =~ ^[0-9]+$ ]]; then
+  log "Packing final artifact (input: $(human_bytes "$work_size"))"
+else
+  log "Packing final artifact"
+fi
+
+if command -v pv >/dev/null 2>&1 && command -v gzip >/dev/null 2>&1 && [[ "$work_size" =~ ^[0-9]+$ ]]; then
+  log "Packing mode: pv progress"
+  tar -C "$BACKUP_ROOT" -cf - "$base_name" \
+    | pv -p -t -e -r -b -s "$work_size" \
+    | gzip -6 > "$archive_path"
+else
+  log "Packing mode: periodic size logs (install pv for better progress)"
+  tar -C "$BACKUP_ROOT" -czf "$archive_path" "$base_name" &
+  tar_pid=$!
+  while kill -0 "$tar_pid" >/dev/null 2>&1; do
+    sleep 5
+    if [[ -f "$archive_path" ]]; then
+      current_size="$(stat -c %s "$archive_path" 2>/dev/null || stat -f %z "$archive_path" 2>/dev/null || echo 0)"
+      if [[ "$current_size" =~ ^[0-9]+$ ]]; then
+        log "Packing in progress... output: $(human_bytes "$current_size")"
+      else
+        log "Packing in progress..."
+      fi
+    else
+      log "Packing in progress..."
+    fi
+  done
+  wait "$tar_pid"
+fi
+
+archive_size="$(stat -c %s "$archive_path" 2>/dev/null || stat -f %z "$archive_path" 2>/dev/null || echo 0)"
+if [[ "$archive_size" =~ ^[0-9]+$ ]]; then
+  log "Final artifact size: $(human_bytes "$archive_size")"
+fi
 sha_value="$(sha256sum "$archive_path" | awk '{print $1}')"
 printf '%s  %s\n' "$sha_value" "$(basename "$archive_path")" > "$sha_path"
 

@@ -1,4 +1,4 @@
-# WordPress Migration A -> B (Tino/Webinoly)
+# WordPress Migration A -> B (Tino/Webinoly/WPTANGTOC OLS)
 
 ## Muc tieu
 - Backup website WordPress tu VPS A.
@@ -19,17 +19,19 @@ Bo script nay tham khao y tuong tu `another-app/301-website/run.sh` va `another-
 ## Path mac dinh theo stack
 - `webinoly`: `/var/www/<domain>/htdocs`
 - `tino`: `/home/<domain>/public_html`
+- `wptangtoc-ols`: `/home/<domain>/html`
 
 Voi Webinoly, `wp-config.php` co the nam ngoai docroot o `/var/www/<domain>/wp-config.php`.
 Script se tu tim config trong ca docroot va thu muc cha cua docroot.
 
 Neu site dung slug khac, truyen them `--source-slug` hoac `--target-slug`.
+Script chap nhan cac cach ghi stack: `wptangtoc-ols`, `wptangtoc_ols`, `WPTANGTOC OLS`.
 
 ## Dieu kien can
 - Quyen `root` SSH vao VPS A va VPS B.
 - Tren ca 2 VPS da co: `bash`, `wp`, `tar`, `mysql`, `sha256sum`.
 - VPS B da co site/domain duoc tao truoc (docroot ton tai).
-- DB cua site tren VPS B nen duoc tao truoc (thuong da co neu ban tao site WordPress bang script cua Webinoly/Tino).
+- DB cua site tren VPS B nen duoc tao truoc (thuong da co neu ban tao site WordPress bang script cua Webinoly/Tino/WPTANGTOC OLS).
 - Nen tao snapshot VPS truoc khi restore.
 - Khuyen nghi cai `pv` tren may dieu phoi de xem progress transfer ro hon (neu khong co, script fallback sang `dd status=progress` neu ho tro).
 
@@ -80,6 +82,7 @@ Mode `run-on-target` se:
 Trong luc chay, script se hien thi:
 - log realtime cho backup/restore (khong doi toi luc xong moi in).
 - transfer mode (`direct scp` hoac `pv progress` hoac `dd status=progress` hoac `plain stream`).
+- progress khi pack backup artifact lon (`pv` neu co, hoac log kich thuoc file tang dan moi 5s).
 - kich thuoc archive va checksum verify.
 
 ## Playbook test chi tiet (vao may nao, chay lenh gi)
@@ -130,6 +133,12 @@ ssh $SSH_USER@$SOURCE_HOST "test -f /home/$SOURCE_DOMAIN/public_html/wp-config.p
 ssh $SSH_USER@$TARGET_HOST "test -d /home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/public_html && echo TGT_OK"
 ```
 
+Neu stack la `wptangtoc-ols`:
+```bash
+ssh $SSH_USER@$SOURCE_HOST "test -f /home/$SOURCE_DOMAIN/html/wp-config.php && echo SRC_OK"
+ssh $SSH_USER@$TARGET_HOST "test -d /home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/html && echo TGT_OK"
+```
+
 ### B3) Tren may dieu phoi: test backup rieng (chua restore)
 ```bash
 ssh $SSH_USER@$SOURCE_HOST "bash -s -- --stack $SOURCE_STACK --domain $SOURCE_DOMAIN --maintenance" < backup-wordpress.sh | tee ./wp-backup.out
@@ -171,6 +180,13 @@ Neu `tino`:
 ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/public_html option get siteurl"
 ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/public_html option get home"
 ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/public_html core is-installed && echo WP_OK"
+```
+
+Neu `wptangtoc-ols`:
+```bash
+ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/html option get siteurl"
+ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/html option get home"
+ssh $SSH_USER@$TARGET_HOST "wp --allow-root --path=/home/${TARGET_DOMAIN:-$SOURCE_DOMAIN}/html core is-installed && echo WP_OK"
 ```
 
 Test them tu may ban:
