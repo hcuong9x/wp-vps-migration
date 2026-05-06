@@ -84,6 +84,8 @@ Mode `run-on-target` se:
 - Step 3: verify checksum tren B.
 - Step 4: restore local tren B.
 - Mac dinh se ep SOURCE dung key auth (BatchMode), fail som neu chua setup key.
+- Mac dinh se xoa backup tren VPS A sau khi transfer+checksum OK, va xoa archive trong `TARGET_INCOMING_DIR` sau khi restore thanh cong.
+- Neu muon giu file backup, them `--keep-source-artifact --keep-target-archive` (hoac dat bien tuong ung trong `migrate.env`).
 
 Neu chua setup key tu VPS B -> VPS A (chi can lam 1 lan):
 
@@ -145,6 +147,7 @@ Trong luc chay, script se hien thi:
 - transfer mode (`direct scp` hoac `pv progress` hoac `dd status=progress` hoac `plain stream`).
 - progress khi pack backup artifact lon (`pv` neu co, hoac log kich thuoc file tang dan moi 5s).
 - kich thuoc archive va checksum verify.
+- cleanup status tren VPS A/B.
 
 ## Playbook test chi tiet (vao may nao, chay lenh gi)
 Luu y:
@@ -321,6 +324,10 @@ ssh root@A "cat /root/wp-migration-backups/oldsite.com-YYYYmmdd-HHMMSS.tgz" \
   - Neu chay qua `migrate-vps-a-to-b.sh`, dung `--target-db-name ... --target-db-user ... --target-db-pass ... --target-db-host ...`
   - Hoac dien trong `migrate.env`: `TARGET_DB_NAME`, `TARGET_DB_USER`, `TARGET_DB_PASS`, `TARGET_DB_HOST`.
 - Sau restore, script chay `search-replace` de doi domain va cap nhat `siteurl/home`.
+- Mac dinh script se don artifact migration:
+  - Xoa backup tren VPS A sau khi copy + checksum OK.
+  - Xoa archive trong `/root/wp-migration-backups/incoming` (hoac `TARGET_INCOMING_DIR`) sau khi restore thanh cong.
+  - Neu can giu file, dung `--keep-source-artifact --keep-target-archive` hoac set `DELETE_SOURCE_ARTIFACT=0`, `DELETE_TARGET_ARCHIVE=0`.
 
 ## Goi y quy trinh an toan production
 1. Snapshot VPS A/B truoc thao tac.

@@ -1,0 +1,3 @@
+version: 1.0.0
+- Initial release of the WP VPS Migration plugin.
+- Added functionality to migrate WordPress sites from shared hosting to VPS.

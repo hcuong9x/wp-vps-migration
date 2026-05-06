@@ -38,7 +38,10 @@ Options:
   --target-ssh-opts "<opts>"       TARGET SSH options (default: SSH_OPTS)
   --source-maintenance             put source site in maintenance mode while backup
   --target-maintenance             put target site in maintenance mode while restore
-  --delete-source-artifact         remove backup artifact on VPS A after migration
+  --delete-source-artifact         remove backup artifact on VPS A after transfer/checksum (default)
+  --keep-source-artifact           keep backup artifact on VPS A
+  --delete-target-archive          remove incoming archive on VPS B after successful restore (default)
+  --keep-target-archive            keep incoming archive on VPS B
   -h, --help
 
 Notes:
@@ -67,7 +70,8 @@ SOURCE_SSH_OPTS=""
 TARGET_SSH_OPTS=""
 SOURCE_MAINTENANCE=0
 TARGET_MAINTENANCE=0
-DELETE_SOURCE_ARTIFACT=0
+DELETE_SOURCE_ARTIFACT=1
+DELETE_TARGET_ARCHIVE=1
 RUN_ON_TARGET=0
 SOURCE_KEY_ONLY=""
 CONFIG_FILE=""
@@ -204,6 +208,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --delete-source-artifact)
       DELETE_SOURCE_ARTIFACT=1
+      shift
+      ;;
+    --keep-source-artifact)
+      DELETE_SOURCE_ARTIFACT=0
+      shift
+      ;;
+    --delete-target-archive)
+      DELETE_TARGET_ARCHIVE=1
+      shift
+      ;;
+    --keep-target-archive)
+      DELETE_TARGET_ARCHIVE=0
       shift
       ;;
     -h|--help)
@@ -404,6 +420,14 @@ if [[ "$backup_sha" != "$target_sha" ]]; then
 fi
 log "Checksum OK: $target_sha"
 
+if [[ "$DELETE_SOURCE_ARTIFACT" -eq 1 ]]; then
+  if run_ssh_source "rm -f '$backup_archive' '$backup_archive.sha256'"; then
+    log "Deleted source backup artifact on VPS A"
+  else
+    log "WARN: cannot delete source backup artifact on VPS A"
+  fi
+fi
+
 log "Step 4/4: Restore on VPS B"
 restore_cmd=(bash -s -- --stack "$TARGET_STACK" --domain "$TARGET_DOMAIN" --backup "$target_archive" --source-domain "$SOURCE_DOMAIN" --target-url "$TARGET_URL")
 if [[ -n "$TARGET_SLUG" ]]; then
@@ -438,12 +462,32 @@ if ! grep -q '^RESTORE_DONE=1$' "$restore_log"; then
 fi
 rm -f "$restore_log"
 
-if [[ "$DELETE_SOURCE_ARTIFACT" -eq 1 ]]; then
-  run_ssh_source "rm -f '$backup_archive' '$backup_archive.sha256'"
-  log "Deleted source backup artifact on VPS A"
+if [[ "$DELETE_TARGET_ARCHIVE" -eq 1 ]]; then
+  if [[ "$RUN_ON_TARGET" -eq 1 ]]; then
+    if rm -f "$target_archive" "$target_archive.sha256"; then
+      log "Deleted incoming archive on VPS B"
+    else
+      log "WARN: cannot delete incoming archive on VPS B"
+    fi
+  else
+    if run_ssh_target "rm -f '$target_archive' '$target_archive.sha256'"; then
+      log "Deleted incoming archive on VPS B"
+    else
+      log "WARN: cannot delete incoming archive on VPS B"
+    fi
+  fi
 fi
 
 log "Migration completed"
 echo "Source: $SOURCE_HOST ($SOURCE_DOMAIN)"
 echo "Target: $TARGET_HOST ($TARGET_DOMAIN)"
-echo "Target archive: $target_archive"
+if [[ "$DELETE_SOURCE_ARTIFACT" -eq 1 ]]; then
+  echo "Source artifact: cleanup attempted for $backup_archive"
+else
+  echo "Source artifact: kept at $backup_archive"
+fi
+if [[ "$DELETE_TARGET_ARCHIVE" -eq 1 ]]; then
+  echo "Target archive: cleaned from $target_archive"
+else
+  echo "Target archive: $target_archive"
+fi
