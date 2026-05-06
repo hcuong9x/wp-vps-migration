@@ -18,6 +18,8 @@ Required:
 Options:
   --config <file>                  load variables from config file (default: ./migrate.env if exists)
   --run-on-target                  run script on VPS B and copy directly A -> B via scp
+  --source-key-only                do not allow password prompt for SOURCE SSH (force batch mode)
+  --allow-source-password          allow password prompt for SOURCE SSH
   --target-domain <domain_on_vps_b> default: same as source-domain
   --source-stack <webinoly|tino|wptangtoc-ols>   default: webinoly
   --target-stack <webinoly|tino|wptangtoc-ols>   default: webinoly
@@ -32,6 +34,8 @@ Options:
   --target-incoming-dir <path>     default: /root/wp-migration-backups/incoming
   --ssh-user <user>                default: root
   --ssh-opts "<opts>"              default: -o StrictHostKeyChecking=accept-new
+  --source-ssh-opts "<opts>"       SOURCE SSH options (default: SSH_OPTS)
+  --target-ssh-opts "<opts>"       TARGET SSH options (default: SSH_OPTS)
   --source-maintenance             put source site in maintenance mode while backup
   --target-maintenance             put target site in maintenance mode while restore
   --delete-source-artifact         remove backup artifact on VPS A after migration
@@ -59,10 +63,13 @@ SOURCE_BACKUP_ROOT="/root/wp-migration-backups"
 TARGET_INCOMING_DIR="/root/wp-migration-backups/incoming"
 SSH_USER="root"
 SSH_OPTS="-o StrictHostKeyChecking=accept-new"
+SOURCE_SSH_OPTS=""
+TARGET_SSH_OPTS=""
 SOURCE_MAINTENANCE=0
 TARGET_MAINTENANCE=0
 DELETE_SOURCE_ARTIFACT=0
 RUN_ON_TARGET=0
+SOURCE_KEY_ONLY=""
 CONFIG_FILE=""
 
 # Optional config from --config <file> or default ./migrate.env
@@ -101,6 +108,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --run-on-target)
       RUN_ON_TARGET=1
+      shift
+      ;;
+    --source-key-only)
+      SOURCE_KEY_ONLY=1
+      shift
+      ;;
+    --allow-source-password)
+      SOURCE_KEY_ONLY=0
       shift
       ;;
     --source-host)
@@ -171,6 +186,14 @@ while [[ $# -gt 0 ]]; do
       SSH_OPTS="${2:-}"
       shift 2
       ;;
+    --source-ssh-opts)
+      SOURCE_SSH_OPTS="${2:-}"
+      shift 2
+      ;;
+    --target-ssh-opts)
+      TARGET_SSH_OPTS="${2:-}"
+      shift 2
+      ;;
     --source-maintenance)
       SOURCE_MAINTENANCE=1
       shift
@@ -206,6 +229,37 @@ fi
 
 if [[ -z "$TARGET_URL" ]]; then
   TARGET_URL="https://$TARGET_DOMAIN"
+fi
+
+if [[ -z "$SOURCE_SSH_OPTS" ]]; then
+  SOURCE_SSH_OPTS="$SSH_OPTS"
+fi
+
+if [[ -z "$TARGET_SSH_OPTS" ]]; then
+  TARGET_SSH_OPTS="$SSH_OPTS"
+fi
+
+# Default behavior:
+# - run-on-target: enforce key auth for SOURCE to avoid hidden password prompts.
+# - non run-on-target: keep backward-compatible (allow password prompts).
+if [[ -z "$SOURCE_KEY_ONLY" ]]; then
+  if [[ "$RUN_ON_TARGET" -eq 1 ]]; then
+    SOURCE_KEY_ONLY=1
+  else
+    SOURCE_KEY_ONLY=0
+  fi
+fi
+
+if [[ "$SOURCE_KEY_ONLY" -eq 1 ]]; then
+  if [[ "$SOURCE_SSH_OPTS" != *"BatchMode="* ]]; then
+    SOURCE_SSH_OPTS="$SOURCE_SSH_OPTS -o BatchMode=yes"
+  fi
+  if [[ "$SOURCE_SSH_OPTS" != *"PreferredAuthentications="* ]]; then
+    SOURCE_SSH_OPTS="$SOURCE_SSH_OPTS -o PreferredAuthentications=publickey"
+  fi
+  if [[ "$SOURCE_SSH_OPTS" != *"PasswordAuthentication="* ]]; then
+    SOURCE_SSH_OPTS="$SOURCE_SSH_OPTS -o PasswordAuthentication=no"
+  fi
 fi
 
 normalize_stack() {
@@ -251,17 +305,33 @@ if [[ "$RUN_ON_TARGET" -eq 1 ]] && ! command -v scp >/dev/null 2>&1; then
   exit 1
 fi
 
-ssh_args=()
+source_ssh_args=()
+target_ssh_args=()
 # shellcheck disable=SC2206
-ssh_args=($SSH_OPTS)
+source_ssh_args=($SOURCE_SSH_OPTS)
+# shellcheck disable=SC2206
+target_ssh_args=($TARGET_SSH_OPTS)
 
 run_ssh_source() {
-  ssh "${ssh_args[@]}" "${SSH_USER}@${SOURCE_HOST}" "$@"
+  ssh "${source_ssh_args[@]}" "${SSH_USER}@${SOURCE_HOST}" "$@"
 }
 
 run_ssh_target() {
-  ssh "${ssh_args[@]}" "${SSH_USER}@${TARGET_HOST}" "$@"
+  ssh "${target_ssh_args[@]}" "${SSH_USER}@${TARGET_HOST}" "$@"
 }
+
+if [[ "$SOURCE_KEY_ONLY" -eq 1 ]]; then
+  log "Preflight: checking key auth to SOURCE ($SOURCE_HOST)"
+  if ! run_ssh_source "true" >/dev/null 2>&1; then
+    echo "SOURCE key authentication failed (password prompt disabled)." >&2
+    echo "Please setup SSH key from current machine to SOURCE, then retry." >&2
+    echo "Example:" >&2
+    echo "  ssh-keygen -t ed25519 -f ~/.ssh/wp_migrate -N ''" >&2
+    echo "  ssh-copy-id -i ~/.ssh/wp_migrate.pub ${SSH_USER}@${SOURCE_HOST}" >&2
+    echo "  Then set SOURCE_SSH_OPTS or SSH_OPTS with: -i ~/.ssh/wp_migrate -o IdentitiesOnly=yes" >&2
+    exit 1
+  fi
+fi
 
 log "Step 1/4: Run backup on VPS A ($SOURCE_HOST)"
 backup_cmd=(bash -s -- --stack "$SOURCE_STACK" --domain "$SOURCE_DOMAIN" --backup-root "$SOURCE_BACKUP_ROOT")
@@ -304,7 +374,7 @@ fi
 
 if [[ "$RUN_ON_TARGET" -eq 1 ]]; then
   log "Transfer mode: direct scp A -> B (running on target)"
-  scp "${ssh_args[@]}" "${SSH_USER}@${SOURCE_HOST}:${backup_archive}" "$target_archive"
+  scp "${source_ssh_args[@]}" "${SSH_USER}@${SOURCE_HOST}:${backup_archive}" "$target_archive"
 else
   if command -v pv >/dev/null 2>&1; then
     log "Transfer mode: pv progress"

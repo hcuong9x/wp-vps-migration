@@ -67,6 +67,11 @@ Dat them:
 ```bash
 RUN_ON_TARGET=1
 ```
+Khuyen nghi them key-based SSH cho SOURCE de khong hoi password:
+```bash
+SOURCE_SSH_OPTS='-i /root/.ssh/wp_migrate -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new'
+SOURCE_KEY_ONLY=1
+```
 
 3) Chay migrate:
 ```bash
@@ -78,6 +83,62 @@ Mode `run-on-target` se:
 - Step 2: `scp` truc tiep tu A ve B (khong qua may local).
 - Step 3: verify checksum tren B.
 - Step 4: restore local tren B.
+- Mac dinh se ep SOURCE dung key auth (BatchMode), fail som neu chua setup key.
+
+Neu chua setup key tu VPS B -> VPS A (chi can lam 1 lan):
+
+1) Tren VPS B: tao key rieng cho migration (an toan hon dung chung `id_rsa`)
+```bash
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+ssh-keygen -t ed25519 -f /root/.ssh/wp_migrate -N ""
+```
+
+2) Tren VPS B: copy public key sang VPS A
+```bash
+ssh-copy-id -i /root/.ssh/wp_migrate.pub root@$SOURCE_HOST
+```
+Neu VPS A dung SSH port khac 22:
+```bash
+ssh-copy-id -p 2222 -i /root/.ssh/wp_migrate.pub root@$SOURCE_HOST
+```
+
+Neu may khong co `ssh-copy-id`, lam thu cong:
+```bash
+cat /root/.ssh/wp_migrate.pub
+```
+Copy output o tren, roi SSH vao VPS A va chay:
+```bash
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+echo 'PASTE_PUBLIC_KEY_HERE' >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+```
+
+3) Tren VPS B: verify ket noi key-only (khong cho fallback password)
+```bash
+ssh -i /root/.ssh/wp_migrate \
+  -o IdentitiesOnly=yes \
+  -o BatchMode=yes \
+  -o PreferredAuthentications=publickey \
+  -o PasswordAuthentication=no \
+  -o StrictHostKeyChecking=accept-new \
+  root@$SOURCE_HOST "echo KEY_OK; hostname"
+```
+Neu setup dung, lenh se in `KEY_OK` va hostname cua VPS A.
+
+4) Luu cau hinh vao `migrate.env` tren VPS B:
+```bash
+RUN_ON_TARGET=1
+SOURCE_SSH_OPTS='-i /root/.ssh/wp_migrate -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new'
+SOURCE_KEY_ONLY=1
+```
+
+5) Neu bao `Permission denied (publickey)`, check nhanh tren VPS A:
+- `/root/.ssh` la `700`, `authorized_keys` la `600`, owner la `root:root`.
+- `/etc/ssh/sshd_config` co `PubkeyAuthentication yes`.
+- Neu dang login bang `root`, can `PermitRootLogin yes` hoac `PermitRootLogin prohibit-password`.
+- Sau khi sua sshd config, restart dich vu SSH (`systemctl restart sshd` hoac `systemctl restart ssh` tuy distro).
 
 Trong luc chay, script se hien thi:
 - log realtime cho backup/restore (khong doi toi luc xong moi in).
@@ -113,6 +174,9 @@ Neu khong muon `source`, script tu dong nap `./migrate.env` neu file ton tai.
 Neu can SSH key rieng, sua truc tiep trong `migrate.env`:
 ```bash
 SSH_OPTS='-i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new'
+# hoac tach rieng:
+# SOURCE_SSH_OPTS='-i ~/.ssh/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new'
+# TARGET_SSH_OPTS='-o StrictHostKeyChecking=accept-new'
 ```
 
 ### B2) Tren may dieu phoi: precheck nhanh VPS A/B qua SSH
