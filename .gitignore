@@ -1,0 +1,16 @@
+# Env config chứa credentials — không commit
+
+# Claude Code internal
+.claude/
+
+# Temp / local
+*.log
+*.tmp
+*.bak
+*.swp
+*.orig
+*~
+
+# Editor
+.vscode/
+.idea/

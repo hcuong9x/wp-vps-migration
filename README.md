@@ -234,6 +234,39 @@ Neu dang SSH vao VPS B va muon copy truc tiep A -> B:
 ./migrate-vps-a-to-b.sh --run-on-target --source-maintenance --target-maintenance
 ```
 
+## Chuyen nhieu website cung mot VPS A -> VPS B
+Neu cac website giu nguyen domain, dung `--domains`:
+```bash
+./migrate-vps-a-to-b.sh \
+  --run-on-target \
+  --domains "bokunopico.store,site2.com,site3.com" \
+  --source-maintenance \
+  --target-maintenance
+```
+
+Neu source/target domain khac nhau, lap lai `--site source=target`:
+```bash
+./migrate-vps-a-to-b.sh \
+  --run-on-target \
+  --site old1.com=new1.com \
+  --site old2.com=new2.com \
+  --source-maintenance \
+  --target-maintenance
+```
+
+Hoac dat trong `migrate.env`:
+```bash
+SOURCE_DOMAINS='bokunopico.store site2.com site3.com'
+# De trong TARGET_DOMAIN/TARGET_DOMAINS neu giu nguyen domain.
+# Neu can doi domain, dung TARGET_DOMAINS cung so luong va cung thu tu:
+# TARGET_DOMAINS='new1.com new2.com new3.com'
+```
+
+Luu y khi chay batch:
+- Script chay tung site theo thu tu: backup -> transfer -> checksum -> restore, xong site nay moi qua site tiep theo.
+- Khong dat `TARGET_URL` khi chay nhieu site; script tu dung `https://<target-domain>` cho tung site.
+- Khong dat `TARGET_DB_*` global khi chay nhieu site; de trong de restore tu doc DB cua tung target site tu `wp-config.php`.
+
 ### B5) Tren VPS B: verify sau restore
 Neu `webinoly`:
 ```bash
