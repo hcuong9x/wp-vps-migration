@@ -25,6 +25,8 @@ Options:
   --slug <path>            docroot slug, default: htdocs (webinoly), public_html (tino), html (wptangtoc-ols)
   --backup-root <path>     default: /root/wp-migration-backups
   --maintenance            enable wp maintenance mode during backup
+  --exclude <path>         extra path to exclude from files archive, relative to docroot
+                            (repeatable, e.g. --exclude wp-content/uploads/debug-huge)
   -h, --help               show help
 
 Outputs:
@@ -38,6 +40,7 @@ DOMAIN=""
 SLUG=""
 BACKUP_ROOT="/root/wp-migration-backups"
 USE_MAINTENANCE=0
+EXTRA_EXCLUDES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,6 +63,10 @@ while [[ $# -gt 0 ]]; do
     --maintenance)
       USE_MAINTENANCE=1
       shift
+      ;;
+    --exclude)
+      EXTRA_EXCLUDES+=("${2:-}")
+      shift 2
       ;;
     -h|--help)
       usage
@@ -172,11 +179,19 @@ meta_file="$work_dir/meta.env"
 log "Exporting database"
 wp --allow-root --path="$WP_PATH" db export "$db_export" --add-drop-table --quiet
 
+tar_exclude_args=(--exclude='./wp-content/cache' --exclude='./wp-content/ai1wm-backups' --exclude='./wp-content/uploads/wc-logs')
+for extra in "${EXTRA_EXCLUDES[@]:-}"; do
+  [[ -z "$extra" ]] && continue
+  tar_exclude_args+=(--exclude="./${extra#./}")
+done
+
 log "Archiving WordPress files"
+if [[ "${#EXTRA_EXCLUDES[@]}" -gt 0 ]]; then
+  log "Extra excludes: ${EXTRA_EXCLUDES[*]}"
+fi
 tar -C "$WP_PATH" \
   --warning=no-file-changed \
-  --exclude='./wp-content/cache' \
-  --exclude='./wp-content/ai1wm-backups' \
+  "${tar_exclude_args[@]}" \
   -czf "$files_archive" .
 
 source_siteurl="$(wp --allow-root --path="$WP_PATH" option get siteurl --quiet || true)"

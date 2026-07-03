@@ -43,6 +43,8 @@ Options:
   --target-ssh-opts "<opts>"       TARGET SSH options (default: SSH_OPTS)
   --source-maintenance             put source site in maintenance mode while backup
   --target-maintenance             put target site in maintenance mode while restore
+  --source-exclude <path>          extra path to exclude from source files archive, relative to
+                                    docroot (repeatable, e.g. --source-exclude wp-content/uploads/big-log)
   --delete-source-artifact         remove backup artifact on VPS A after transfer/checksum (default)
   --keep-source-artifact           keep backup artifact on VPS A
   --delete-target-archive          remove incoming archive on VPS B after successful restore (default)
@@ -82,11 +84,13 @@ SOURCE_SSH_OPTS=""
 TARGET_SSH_OPTS=""
 SOURCE_MAINTENANCE=0
 TARGET_MAINTENANCE=0
+SOURCE_EXCLUDE=""
 DELETE_SOURCE_ARTIFACT=1
 DELETE_TARGET_ARCHIVE=1
 RUN_ON_TARGET=0
 SOURCE_KEY_ONLY=""
 CONFIG_FILE=""
+CLI_SOURCE_EXCLUDES=()
 
 # Optional config from --config <file> or default ./migrate.env
 default_config_file="./migrate.env"
@@ -234,6 +238,10 @@ while [[ $# -gt 0 ]]; do
       SOURCE_MAINTENANCE=1
       shift
       ;;
+    --source-exclude)
+      CLI_SOURCE_EXCLUDES+=("${2:-}")
+      shift 2
+      ;;
     --target-maintenance)
       TARGET_MAINTENANCE=1
       shift
@@ -380,6 +388,16 @@ build_site_lists() {
 
 build_site_lists
 
+SOURCE_EXCLUDES=()
+if [[ -n "$SOURCE_EXCLUDE" ]]; then
+  while IFS= read -r item; do
+    SOURCE_EXCLUDES+=("$item")
+  done < <(split_list_values "$SOURCE_EXCLUDE")
+fi
+if [[ ${#CLI_SOURCE_EXCLUDES[@]} -gt 0 ]]; then
+  SOURCE_EXCLUDES+=("${CLI_SOURCE_EXCLUDES[@]}")
+fi
+
 if [[ -z "$SOURCE_HOST" || -z "$TARGET_HOST" ]]; then
   usage
   exit 1
@@ -508,6 +526,7 @@ migrate_site() {
   local site_total="$4"
   local target_url="$TARGET_URL"
   local backup_log backup_archive backup_sha target_archive source_size target_sha restore_log
+  local extra_exclude
   local -a backup_cmd restore_cmd
 
   if [[ -z "$target_url" ]]; then
@@ -523,6 +542,10 @@ migrate_site() {
   if [[ "$SOURCE_MAINTENANCE" -eq 1 ]]; then
     backup_cmd+=(--maintenance)
   fi
+  for extra_exclude in "${SOURCE_EXCLUDES[@]:-}"; do
+    [[ -z "$extra_exclude" ]] && continue
+    backup_cmd+=(--exclude "$extra_exclude")
+  done
 
   backup_log="$(mktemp "${TMPDIR:-/tmp}/wp-backup-log.XXXXXX")"
   run_ssh_source "${backup_cmd[@]}" < "$backup_script" | tee "$backup_log"
