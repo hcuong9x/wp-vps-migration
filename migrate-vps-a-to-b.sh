@@ -425,6 +425,22 @@ if [[ -z "$TARGET_SSH_OPTS" ]]; then
   TARGET_SSH_OPTS="$SSH_OPTS"
 fi
 
+# Keep the SSH connection alive during long idle stretches (e.g. tar archiving
+# a large site with no stdout output), so NAT/firewall middleboxes don't drop
+# the connection for inactivity and silently kill the migration.
+if [[ "$SOURCE_SSH_OPTS" != *"ServerAliveInterval="* ]]; then
+  SOURCE_SSH_OPTS="$SOURCE_SSH_OPTS -o ServerAliveInterval=30"
+fi
+if [[ "$SOURCE_SSH_OPTS" != *"ServerAliveCountMax="* ]]; then
+  SOURCE_SSH_OPTS="$SOURCE_SSH_OPTS -o ServerAliveCountMax=10"
+fi
+if [[ "$TARGET_SSH_OPTS" != *"ServerAliveInterval="* ]]; then
+  TARGET_SSH_OPTS="$TARGET_SSH_OPTS -o ServerAliveInterval=30"
+fi
+if [[ "$TARGET_SSH_OPTS" != *"ServerAliveCountMax="* ]]; then
+  TARGET_SSH_OPTS="$TARGET_SSH_OPTS -o ServerAliveCountMax=10"
+fi
+
 # Default behavior:
 # - run-on-target: enforce key auth for SOURCE to avoid hidden password prompts.
 # - non run-on-target: keep backward-compatible (allow password prompts).
