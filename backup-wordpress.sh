@@ -174,6 +174,7 @@ wp --allow-root --path="$WP_PATH" db export "$db_export" --add-drop-table --quie
 
 log "Archiving WordPress files"
 tar -C "$WP_PATH" \
+  --warning=no-file-changed \
   --exclude='./wp-content/cache' \
   --exclude='./wp-content/ai1wm-backups' \
   -czf "$files_archive" .
