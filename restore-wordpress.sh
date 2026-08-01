@@ -291,6 +291,9 @@ wp --allow-root --path="$WP_PATH" config set DB_USER "$DB_USER" --type=constant
 wp --allow-root --path="$WP_PATH" config set DB_PASSWORD "$DB_PASS" --type=constant
 wp --allow-root --path="$WP_PATH" config set DB_HOST "$DB_HOST" --type=constant
 
+log "Forcing FS_METHOD=direct (WP-CLI here runs as root; WordPress's get_filesystem_method() compares fileowner(__FILE__) against a temp file it creates as the CURRENT process's UID, so a root-run wp-cli will never match www-data-owned core files no matter the docroot's chown -- it always falls back to ftpext and crashes with no FTP configured)"
+wp --allow-root --path="$WP_PATH" config set FS_METHOD direct --type=constant --quiet
+
 log "Resetting and importing database"
 wp --allow-root --path="$WP_PATH" db check --quiet
 wp --allow-root --path="$WP_PATH" db reset --yes --quiet
