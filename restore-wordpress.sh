@@ -274,6 +274,9 @@ shopt -u dotglob nullglob
 log "Extracting WordPress files"
 tar -xzf "$payload_dir/files.tar.gz" -C "$WP_PATH"
 
+log "Fixing ownership before running WP-CLI (extracted files keep source VPS's UID/GID; a mismatch vs the process owner makes WordPress fall back to the ftpext filesystem method and crash on the next full WP bootstrap)"
+chown -R "$OWNER_GROUP" "$WP_PATH"
+
 wp_config_path="$(find_wp_config || true)"
 if [[ -z "$wp_config_path" ]]; then
   echo "No wp-config.php found after extracting files." >&2
